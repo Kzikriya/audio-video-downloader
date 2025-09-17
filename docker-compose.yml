@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER=redis://redis:6379/0
+      - CELERY_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery
+    volumes:
+      - downloads:/app/downloads
+      - logs:/app/logs
+    networks:
+      - downloader-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis_config.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - downloader-network
+
+  celery:
+    build: .
+    command: celery -A main.celery_app worker --loglevel=info --concurrency=10
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER=redis://redis:6379/0
+      - CELERY_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+    volumes:
+      - downloads:/app/downloads
+      - logs:/app/logs
+    networks:
+      - downloader-network
+
+  flower:
+    image: mher/flower:1.0
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER=redis://redis:6379/0
+      - CELERY_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery
+    networks:
+      - downloader-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - web
+    networks:
+      - downloader-network
+
+volumes:
+  downloads:
+  redis_data:
+  logs:
+
+networks:
+  downloader-network:
+    driver: bridge
